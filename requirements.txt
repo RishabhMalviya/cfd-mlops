@@ -1,0 +1,7 @@
+--index-url https://download.pytorch.org/whl/cu128
+torch==2.12.0.dev20260407+cu128
+
+--extra-index-url https://pypi.org/simple
+torch-geometric==2.7.0
+scipy==1.17.1
+jupyter==1.1.1
