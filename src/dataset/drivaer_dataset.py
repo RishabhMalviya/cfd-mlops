@@ -24,6 +24,10 @@ class DrivAerDataset(Dataset):
             if os.path.exists(os.path.join(data_dir, f"run_{i}", f"boundary_{i}.vtp"))
         ]
 
+        for idx in range(len(self.run_ids)):
+            print(f'Processing and caching run {idx+1}/{len(self.run_ids)}...', end='\r')
+            _, _ = self._process_and_cache(idx)
+
         self.norm_cache = norm_cache if norm_cache else os.path.join(self.cache_dir, "norm_coef.pt")
         if os.path.exists(self.norm_cache):
             self.norm_coef = torch.load(self.norm_cache, weights_only=False)
@@ -35,12 +39,12 @@ class DrivAerDataset(Dataset):
         return len(self.run_ids)
 
     def __getitem__(self, idx):
-        data, geom = self._get_unnormalized_item(idx)
+        data, geom = self._process_and_cache(idx)
         data, geom = self._apply_norm(data, geom)
 
         return data, geom
 
-    def _get_unnormalized_item(self, idx):
+    def _process_and_cache(self, idx):
         run_id = self.run_ids[idx]
 
         cache_path = os.path.join(self.cache_dir, f"run_{run_id}.pt")
@@ -124,8 +128,7 @@ class DrivAerDataset(Dataset):
         sum_y = torch.zeros(4)
         count = 0
         for idx in range(len(self.run_ids)):
-            print(f'Computing norm for run {idx+1}/{len(self.run_ids)}...', end='\r')
-            data, _ = self._get_unnormalized_item(idx)
+            data, _ = self._process_and_cache(idx)
             sum_x += data.x.sum(dim=0)
             sum_y += cast(torch.Tensor, data.y).sum(dim=0)
             count += data.x.shape[0]
@@ -136,7 +139,7 @@ class DrivAerDataset(Dataset):
         sum_sq_x = torch.zeros(7)
         sum_sq_y = torch.zeros(4)
         for idx in range(len(self.run_ids)):
-            data, _ = self._get_unnormalized_item(idx)
+            data, _ = self._process_and_cache(idx)
             sum_sq_x += ((data.x - mean_x) ** 2).sum(dim=0)
             sum_sq_y += ((data.y - mean_y) ** 2).sum(dim=0)
         std_x = (sum_sq_x / count).clamp(min=1e-8).sqrt()
