@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "cfd-mlops"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = [    
+dependencies = [
     "torch==2.11.0",
     "torch-geometric==2.7.0",
     "scipy==1.17.1",
-    "pyvista=0.47.3",
-    "jupyter==1.1.1"
+    "pyvista==0.47.3",
+    "jupyter==1.1.1",
+    "scikit-learn>=1.9.0",
 ]
 
 [tool.uv.sources]
