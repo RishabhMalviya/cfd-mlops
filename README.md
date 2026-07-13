@@ -8,18 +8,18 @@ Predicting surface **pressure** and **wall shear stress** fields over car meshes
 
 ---
 
-## The problem
+## The Problem
 
 Automotive aerodynamics is traditionally evaluated with Computational Fluid Dynamics (CFD) simulation. While these are highly accurate, they can take hours to days of solver time per design. The goal here is to train a surrogate neural network model to directly predict the quantities a CFD solver would produce given a car's surface mesh, in a single forward pass. 
 
-Neural network are do a great of job of generalizing to inputs that are nearby in continuous space. Since the variability in car geometries is not too great, I expect neural surrogate models to generarlize to unseen car geometries quite well. 
+Neural network do a great of job of generalizing to inputs that are nearby in continuous space. Since the variability in car geometries is not too great, I expect neural surrogate models to generarlize to unseen car geometries quite well. 
 
-Concretely, this project trains a model to predict, at every node of a vehicle's surface mesh:
+Concretely, this project trains a model to predict, at every node of a vehicle's surface mesh, the following quantities:
 
 - **Pressure** (`p`) — the dominant contributor to aerodynamic drag and lift
 - **Wall shear stress** (3 components) — the surface friction that makes up the rest of the drag budget
 
-## The model — Transolver
+## The Model — Transolver
 
 Training uses [Transolver](https://github.com/thuml/Transolver), a Transformer-based PDE solver that learns physical states over irregular meshes via a "physics-attention" mechanism.
 
@@ -36,16 +36,6 @@ Since Transolver's memory bottleneck is activation memory from large mesh inputs
 </p>
 
 It provides surface (boundary) and volume flow-field data — pressure, wall shear stress, velocity, forces and moments — released under CC BY-SA 4.0. This project uses the surface (`boundary_*.vtp`) data
-
-## Tech stack
-
-| Concern | Tooling |
-|---|---|
-| Model | Transolver (physics-attention Transformer) |
-| Training | PyTorch 2.11 (CUDA 12.8), DDP via `torchrun` |
-| Data | DrivAerML surface meshes · PyVista · PyTorch Geometric |
-| Orchestration | Kubeflow Pipelines |
-| Environment | `uv` · Python 3.12 |
 
 ## Quickstart
 
@@ -66,17 +56,6 @@ python src/train.py ... --resume checkpoints/epoch_0020.pt
 ```
 
 The DrivAerML data can be fetched with `data/download_drivaer_data.sh`.
-
-## Project layout
-
-```
-cfd-mlops/
-├── src/
-│   ├── train.py                    # DDP training entrypoint (torchrun-aware)
-│   └── dataset/drivaer_dataset.py  # mesh preprocessing, caching, normalization
-├── data/drivaer_data/              # DrivAerML runs (gitignored)
-└── pyproject.toml                  # uv project, Python 3.12, torch cu128
-```
 
 ## Acknowledgements
 
