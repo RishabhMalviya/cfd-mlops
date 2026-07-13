@@ -25,5 +25,6 @@ export BASE_URL
 export LOCAL_DIR
 
 mkdir -p "$LOCAL_DIR"
+seq 1 23 | xargs -P 5 -I {} bash -c 'download_run "$@"' _ {}  # 24 is corrupted, so we skip it
 seq 25 50 | xargs -P 5 -I {} bash -c 'download_run "$@"' _ {}
 echo "All downloads complete"
