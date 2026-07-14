@@ -3,7 +3,7 @@
 Predicting surface **pressure** and **wall shear stress** fields over car meshes with a neural PDE surrogate — trained in a distributed manner with **PyTorch DDP + `torchrun`**.
 
 <p align="center">
-  <img src="readme_assets/Prediction Outputs.png" alt="Inputs and outputs for this project" width="80%">
+  <img src="docs/Prediction Outputs.png" alt="Inputs and outputs for this project" width="80%">
 </p>
 
 ---
