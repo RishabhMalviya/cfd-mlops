@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT / "Transolver" / "Car-Design-ShapeNetCar"))
 sys.path.insert(0, str(ROOT / "cfd-mlops" / "src"))
 
 from models.Transolver import Model  # noqa: E402
-from dataset.drivaer_dataset import DrivAerDataset  # noqa: E402
+from drivaer_dataset import DrivAerDataset  # noqa: E402
 
 
 def parse_args():
