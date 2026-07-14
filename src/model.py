@@ -1,0 +1,200 @@
+import torch
+import torch.nn as nn
+from einops import rearrange
+
+
+class PhysicsAttentionIrregularMesh(nn.Module):
+    """
+    This module implements the PhysicsAttention mechanism for irregular meshes 
+        from Transolver (https://arxiv.org/pdf/2402.02366). The code is adapted from 
+        https://github.com/thuml/Transolver/blob/main/Physics_Attention.py For 
+        regular meshes, Transolver uses Conv2d layers for the `in_project*` layers.
+
+        
+    Inputs are expected in the shape (B, N, C) where B is batch size, N 
+        is the number of (irregular) nodes, and C is the node feature dimension.
+    """
+
+    def __init__(self, in_out_dim, num_attn_heads=8, attn_head_dim=64, dropout=0., num_slices=64):
+        super().__init__()
+        self.attn_head_dim = attn_head_dim
+        self.num_attn_heads = num_attn_heads
+        self.inner_dim = self.attn_head_dim * self.num_attn_heads
+
+        self.scale = self.attn_head_dim ** -0.5
+
+        self.dropout = nn.Dropout(dropout)
+
+        self.softmax = nn.Softmax(dim=-1)
+        self.softmax_temperature_scaling = nn.Parameter(torch.ones([1, self.num_attn_heads, 1, 1]) * 0.5)
+
+        self.in_project_x = nn.Linear(in_out_dim, self.inner_dim)
+        self.in_project_fx = nn.Linear(in_out_dim, self.inner_dim)
+        self.in_project_slice = nn.Linear(self.attn_head_dim, num_slices)
+        for l in [self.in_project_slice]:
+            torch.nn.init.orthogonal_(l.weight)  # use a principled initialization
+        self.to_q = nn.Linear(self.attn_head_dim, self.attn_head_dim, bias=False)
+        self.to_k = nn.Linear(self.attn_head_dim, self.attn_head_dim, bias=False)
+        self.to_v = nn.Linear(self.attn_head_dim, self.attn_head_dim, bias=False)
+        self.to_out = nn.Sequential(
+            nn.Linear(self.inner_dim, in_out_dim),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x):
+        # B N C
+        B, N, C = x.shape
+
+        ## 1 SLICE
+        fx_mid = self.in_project_fx(x).reshape(B, N, self.num_attn_heads, self.attn_head_dim) \
+            .permute(0, 2, 1, 3).contiguous()  # B H N C
+        x_mid = self.in_project_x(x).reshape(B, N, self.num_attn_heads, self.attn_head_dim) \
+            .permute(0, 2, 1, 3).contiguous()  # B H N C
+        slice_weights = self.softmax(self.in_project_slice(x_mid) / self.softmax_temperature_scaling)  # B H N G
+        slice_norm = slice_weights.sum(2)  # B H G
+        slice_token = torch.einsum("bhnc,bhng->bhgc", fx_mid, slice_weights)
+        slice_token = slice_token / ((slice_norm + 1e-5)[:, :, :, None].repeat(1, 1, 1, self.attn_head_dim))
+
+        ## 2 ATTENTION
+        q_slice_token = self.to_q(slice_token)
+        k_slice_token = self.to_k(slice_token)
+        v_slice_token = self.to_v(slice_token)
+        dots = torch.matmul(q_slice_token, k_slice_token.transpose(-1, -2)) * self.scale
+        attn = self.softmax(dots)
+        attn = self.dropout(attn)
+        out_slice_token = torch.matmul(attn, v_slice_token)  # B H G D
+
+        # 3 DESLICE
+        out_x = torch.einsum("bhgc,bhng->bhnc", out_slice_token, slice_weights)
+        out_x = rearrange(out_x, 'b h n d -> b n (h d)')
+        return self.to_out(out_x)
+    
+
+class MLP(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, n_layers=1):
+        super(MLP, self).__init__()
+
+        self.n_layers = n_layers
+
+        self.linear_pre = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.GELU())
+        self.linears = nn.ModuleList([
+            nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.GELU())
+            for _ in range(n_layers)
+        ])
+        self.linear_post = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x):
+        x = self.linear_pre(x)
+        for i in range(self.n_layers):
+            x = self.linears[i](x)
+        x = self.linear_post(x)
+
+        return x
+
+
+class TransolverBlock(nn.Module):
+    """Transformer encoder block."""
+
+    def __init__(
+            self,
+            hidden_dim: int,
+            num_attn_heads: int,
+            dropout: float,
+            mlp_ratio=4,
+            is_output_block=False,
+            out_dim=1,
+            num_slices=32
+    ):
+        super().__init__()
+        assert hidden_dim % num_attn_heads == 0, "hidden_dim must be divisible by num_attn_heads"
+
+        self.ln_1 = nn.LayerNorm(hidden_dim)
+        self.PhysicsAttention = PhysicsAttentionIrregularMesh(
+            in_out_dim=hidden_dim,
+            num_attn_heads=num_attn_heads,
+            attn_head_dim=hidden_dim // num_attn_heads,
+            dropout=dropout,
+            num_slices=num_slices
+        )
+
+        self.ln_2 = nn.LayerNorm(hidden_dim)
+        self.mlp = MLP(
+            input_dim=hidden_dim, 
+            hidden_dim=hidden_dim * mlp_ratio, 
+            output_dim=hidden_dim, 
+            n_layers=0
+        )
+
+        self.return_out_dim = is_output_block
+        if self.return_out_dim:
+            self.ln_3 = nn.LayerNorm(hidden_dim)
+            self.mlp2 = nn.Linear(hidden_dim, out_dim)
+
+    def forward(self, x):
+        x = self.PhysicsAttention(self.ln_1(x)) + x
+        x = self.mlp(self.ln_2(x)) + x
+        if self.return_out_dim:
+            x = self.mlp2(self.ln_3(x))
+
+        return x
+
+
+class Model(nn.Module):
+    def __init__(self,
+        n_layers=5,
+        hidden_dim=256,
+        dropout=0,
+        n_head=8, 
+        mlp_ratio=1,
+        in_dim=6, # 3 for position, 3 for normals
+        out_dim=1,
+        num_slices=32
+    ):
+        super(Model, self).__init__()
+        self.__name__ = 'UniPDE_3D'
+
+        self.preprocess = MLP(in_dim, hidden_dim * 2, hidden_dim, n_layers=0)
+
+        self.blocks = nn.ModuleList([
+            TransolverBlock(hidden_dim=hidden_dim,
+                            num_attn_heads=n_head,
+                            dropout=dropout,
+                            mlp_ratio=mlp_ratio,
+                            out_dim=out_dim,
+                            num_slices=num_slices,
+                            is_output_block=(layer_idx == n_layers - 1)
+            )
+            for layer_idx in range(n_layers)
+        ])
+        self.initialize_weights()
+        self.placeholder = nn.Parameter((1 / (hidden_dim)) * torch.rand(hidden_dim, dtype=torch.float))
+
+    def initialize_weights(self):
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        std = 0.02
+        if isinstance(m, nn.Linear):
+            torch.nn.init.trunc_normal_(m.weight, std=std, a=-2.0*std, b=2.0*std)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, (nn.LayerNorm, nn.BatchNorm1d)):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    def forward(self, data):
+        cfd_data, _ = data
+        x, fx, T = cfd_data.x, None, None
+        x = x[None, :, :]
+
+        if fx is not None:
+            fx = torch.cat((x, fx), -1)
+            fx = self.preprocess(fx)
+        else:
+            fx = self.preprocess(x)
+            fx = fx + self.placeholder[None, None, :]
+
+        for block in self.blocks:
+            fx = block(fx)
+
+        return fx[0]
