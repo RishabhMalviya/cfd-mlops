@@ -232,6 +232,8 @@ if __name__ == "__main__":
 
 
     # --- Test Forward Pass With DrivaerDataset ---
+    # TODO: Try with decimated input meshes (e.g., 10k nodes) to see if the model can handle it.
+    # The current DrivAer meshes have ~100k nodes, which is too large for the model to handle on a single GPU.   
     print('Testing forward pass with DrivAerDataset input on GPU...')
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
