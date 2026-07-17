@@ -146,14 +146,19 @@ class Model(nn.Module):
         dropout=0,
         n_head=8, 
         mlp_ratio=1,
-        in_dim=6, # 3 for position, 3 for normals
-        out_dim=1,
+        in_dim=6,  # 3 for position, 3 for normals
+        out_dim=4, # 3 for wall shear stress, 1 for pressure
         num_slices=32
     ):
         super(Model, self).__init__()
-        self.__name__ = 'UniPDE_3D'
 
-        self.preprocess = MLP(in_dim, hidden_dim * 2, hidden_dim, n_layers=0)
+        self.latent_rep_layer = MLP(
+            input_dim=in_dim,
+            hidden_dim=hidden_dim * 2,
+            output_dim=hidden_dim,
+            n_layers=0
+        )
+        self.latent_rep_layer_bias = nn.Parameter((1 / (hidden_dim)) * torch.rand(hidden_dim, dtype=torch.float))
 
         self.blocks = nn.ModuleList([
             TransolverBlock(hidden_dim=hidden_dim,
@@ -166,9 +171,9 @@ class Model(nn.Module):
             )
             for layer_idx in range(n_layers)
         ])
-        self.initialize_weights()
-        self.placeholder = nn.Parameter((1 / (hidden_dim)) * torch.rand(hidden_dim, dtype=torch.float))
 
+        self.initialize_weights()
+        
     def initialize_weights(self):
         self.apply(self._init_weights)
 
@@ -182,19 +187,64 @@ class Model(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, data):
-        cfd_data, _ = data
-        x, fx, T = cfd_data.x, None, None
-        x = x[None, :, :]
+    def forward(self, x):  # the input `x` is the `x` from the `pytorch_geometric.data.Data` object, which is of shape (N, 6) for the 3D meshes in DrivAer
+        # x = x[None, :, :]  # Adding the batch dimension, so x is of shape (1, N, 6)
 
-        if fx is not None:
-            fx = torch.cat((x, fx), -1)
-            fx = self.preprocess(fx)
-        else:
-            fx = self.preprocess(x)
-            fx = fx + self.placeholder[None, None, :]
+        x = self.latent_rep_layer(x) + self.latent_rep_layer_bias[None, None, :]
 
         for block in self.blocks:
-            fx = block(fx)
+            x = block(x)
 
-        return fx[0]
+        return x[0]
+    
+
+if __name__ == "__main__":
+    import os
+    from drivaer_dataset import DrivAerDataset
+
+    # --- Test Model Instantiation ---
+    in_dim = 6
+    out_dim = 4
+
+    model = Model(
+        n_layers=5,
+        hidden_dim=256,
+        dropout=0,
+        n_head=8, 
+        mlp_ratio=1,
+        in_dim=in_dim,
+        out_dim=out_dim,
+        num_slices=32
+    )
+    print(model)
+
+
+    # --- Test Forward Pass ---
+    print('Testing forward pass with random input...')
+
+    N = 10_000
+    x = torch.rand(N, 6)
+    print(f"Input shape : {x.shape} (`in_dim` for model was {in_dim})")
+
+    with torch.no_grad():
+        out = model(x)
+    print(f"Output shape: {out.shape} (`out_dim` for model was {out_dim})")
+
+
+    # --- Test Forward Pass With DrivaerDataset ---
+    print('Testing forward pass with DrivAerDataset input on GPU...')
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    data_dir  = "./data/drivaer_data"
+    # avail_run_ids   = [i for i in list(range(1,51)) if os.path.exists(os.path.join(data_dir, f"run_{i}", f"boundary_{i}.vtp"))]
+    avail_run_ids = [1,2]
+    ds = DrivAerDataset(data_dir=data_dir, run_ids=avail_run_ids)
+    x = ds[0].x
+    x = x.to(device)
+    print(f"Input shape : {x.shape} (`in_dim` for model was {in_dim})")
+    
+    with torch.no_grad():
+        out = model(x)
+    print(f"Output shape: {out.shape} (`out_dim` for model was {out_dim})")

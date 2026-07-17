@@ -177,7 +177,7 @@ def main():
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
 
-    train_ds, val_ds                 = build_datasets(args, rank)
+    train_ds, val_ds                  = build_datasets(args, rank)
     train_loader, val_loader, sampler = build_loaders(train_ds, val_ds, args, world_size)
 
     model = Model(
