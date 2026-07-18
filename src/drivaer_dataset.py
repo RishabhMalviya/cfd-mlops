@@ -13,13 +13,12 @@ from torch_geometric.data import Data
 
 
 class DrivAerDataset(Dataset):
-    def __init__(self, data_dir, run_ids, target_reduction=0.99, target_geom_tensor_size=8192, cache_dir=None, norm_coef=None, norm_cache=None):
+    def __init__(self, data_dir, run_ids, decimate=False, target_reduction=0.99, cache_dir=None, norm_coef=None, norm_cache=None):
         self.data_dir = data_dir
         self.cache_dir = cache_dir if cache_dir else os.path.join(data_dir, 'cache/')
         os.makedirs(self.cache_dir, exist_ok=True)
 
         self.target_reduction = target_reduction
-        self.target_geom_tensor_size = target_geom_tensor_size
 
         self.run_ids = [
             i for i in run_ids
