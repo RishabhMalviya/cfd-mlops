@@ -199,9 +199,6 @@ class Model(nn.Module):
     
 
 if __name__ == "__main__":
-    import os
-    from drivaer_dataset import DrivAerDataset
-
     # --- Test Model Instantiation ---
     in_dim = 6
     out_dim = 4
@@ -216,8 +213,7 @@ if __name__ == "__main__":
         out_dim=out_dim,
         num_slices=32
     )
-    print(model)
-
+    
 
     # --- Test Forward Pass ---
     print('Testing forward pass with random input...')
@@ -232,17 +228,14 @@ if __name__ == "__main__":
 
 
     # --- Test Forward Pass With DrivaerDataset ---
-    # TODO: Try with decimated input meshes (e.g., 10k nodes) to see if the model can handle it.
-    # The current DrivAer meshes have ~100k nodes, which is too large for the model to handle on a single GPU.   
+    from drivaer_dataset import DrivAerDataset
     print('Testing forward pass with DrivAerDataset input on GPU...')
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
     data_dir  = "./data/drivaer_data"
-    # avail_run_ids   = [i for i in list(range(1,51)) if os.path.exists(os.path.join(data_dir, f"run_{i}", f"boundary_{i}.vtp"))]
-    avail_run_ids = [1,2]
-    ds = DrivAerDataset(data_dir=data_dir, run_ids=avail_run_ids)
+    ds = DrivAerDataset(data_dir=data_dir, cache_dir="./data/drivaer_data/cache_decimated_99", run_ids=[1,2])
     x = ds[0].x
     x = x.to(device)
     print(f"Input shape : {x.shape} (`in_dim` for model was {in_dim})")
