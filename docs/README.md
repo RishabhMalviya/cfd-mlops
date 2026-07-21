@@ -23,7 +23,7 @@ Concretely, this project trains a model to predict, at every node of a vehicle's
 
 Training uses [Transolver](https://github.com/thuml/Transolver), a Transformer-based PDE solver that learns physical states over irregular meshes via a "physics-attention" mechanism.
 
-The [`Car-Design-ShapeNetCar` variant](https://github.com/thuml/Transolver/tree/main/Car-Design-ShapeNetCar) is adapted here to the surface-only DrivAerML data without modifying the model itself. Each mesh node is fed 7 geometric input channels `[position(3), sdf(1), normals(3)]` and the model predicts 4 output channels `[wall shear stress(3), pressure(1)]`. This is the same sub-problem tackled by the paper [GA-Field: Geometry Aware Vehicle Aerodynamics Field Prediction](https://arxiv.org/pdf/2602.20609).
+The [`Car-Design-ShapeNetCar` variant](https://github.com/thuml/Transolver/tree/main/Car-Design-ShapeNetCar) is adapted here to the surface-only DrivAerML data without modifying the model itself. Each mesh node is fed 6 geometric input channels `[position(3), normals(3)]` and the model predicts 4 output channels `[wall shear stress(3), pressure(1)]`. This is the same sub-problem tackled by the paper [GA-Field: Geometry Aware Vehicle Aerodynamics Field Prediction](https://arxiv.org/pdf/2602.20609).
 
 Since Transolver's memory bottleneck is activation memory from large mesh inputs, I use DDP to parallelize the training across multiple GPUs.
 
